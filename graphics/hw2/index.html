@@ -88,11 +88,23 @@
 precision mediump float;
 uniform float uTime, uFL;
 uniform vec3  uCursor;
-uniform vec4  uSpheres[${NSPHERES}];
-uniform vec3  uSphereColors[${NSPHERES}];
+uniform vec4  uSpheres[5];
+uniform vec3  uSphereColors[5];
 varying vec3  vPos;
 
 vec3 bgColor = vec3(.05,0.,.05);
+
+float noise(vec3 point) {
+    float r = 0.;
+    for (int i=0;i<16;i++) {
+        vec3 D, p = point + mod(vec3(i,i/4,i/8) , vec3(4.0,2.0,2.0)) +
+            1.7*sin(vec3(float(i),5.*float(i),8.*float(i))), C=floor(p), P=p-C-.5, A=abs(P);
+        C += mod(C.x+C.y+C.z,2.) * step(max(A.yzx,A.zxy),A) * sign(P);
+        D=34.*sin(987.*float(i)+876.*C+76.*C.yzx+765.*C.zxy);P=p-C-.5;
+        r+=sin(6.3*dot(P,fract(D)-.5))*pow(max(0.,1.-2.*dot(P,P)),4.);
+    }
+    return .1 * sin(r);
+}
 
 float raySphere(vec3 V, vec3 W, vec3 C, float r) {
     V -= C;
@@ -116,7 +128,7 @@ void main(void) {
     float power = 20.0;
 
     float tMin = 1000.;
-    for (int i = 0 ; i < ${NSPHERES} ; i++) {
+    for (int i = 0 ; i < 5 ; i++) {
         vec3  C = uSpheres[i].xyz;
         float r = uSpheres[i].w;
         float t = raySphere(V, W, C, r);
@@ -128,10 +140,14 @@ void main(void) {
             // Use the manually assigned color
             vec3 sphereColor = uSphereColors[i];
             
-            color = 0.2 * sphereColor;
+            // Apply noise to the sphere color
+            float noiseValue = noise(P * 2.0 + vec3(uTime * .5));
+            sphereColor = mix(sphereColor, vec3(noiseValue), -1.05);
+
+            color = 0.5 * sphereColor;
 
             bool inShadow = false;
-            for (int j = 0 ; j < ${NSPHERES} ; j++)
+            for (int j = 0 ; j < 5 ; j++)
                 if (j != i) {
                     vec3  SC = uSpheres[j].xyz;
                     float sr = uSpheres[j].w;

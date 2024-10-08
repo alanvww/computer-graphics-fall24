@@ -1,6 +1,6 @@
 // Alan Ren
 // Computer Graphics Fall 2024
-// Matrix class for 3D transformations
+// Matrix library
 
 
 function Matrix() {

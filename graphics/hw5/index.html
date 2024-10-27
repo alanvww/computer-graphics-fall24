@@ -3,7 +3,7 @@
 
 <script>
 
-// A TINY MATRIX LIBRARy
+// A TINY MATRIX LIBRAR
 
 let mInverse = m => {
    let dst = [], det = 0, cofactor = (c, r) => {
@@ -115,14 +115,25 @@ let cylinder = (nu, nv) => createMesh(nu, nv, (u,v) => {
    }
 });
 
-let torus = (nu, nv) => createMesh(nu, nv, (u,v) => {
-   let ct = C(2 * Math.PI * u);
+let torus1 = (nu, nv) => createMesh(nu, nv, (u,v) => {
+   let ct = C(2* Math.PI * u);
    let st = S(2 * Math.PI * u);
-   let cp = C(2 * Math.PI * v);
-   let sp = S(2 * Math.PI * v);
-   let x = (1 + .5 * cp) * ct,
-       y = (1 + .5 * cp) * st,
-       z =      .5 * sp;
+   let cp = C(1 * Math.PI * v);
+   let sp = S(1 * Math.PI * v);
+   let x = (1 + .1 * cp) * ct,
+       y = (1 + .1 * cp) * st,
+       z =      .0 * sp;
+   return [ x,y,z, cp*ct,cp*st,sp ];
+});
+
+let torus2 = (nu, nv) => createMesh(nu, nv, (u,v) => {
+   let ct = C(1.8 * Math.PI * u);
+   let st = S(1.8 * Math.PI * u);
+   let cp = C(1 * Math.PI * v);
+   let sp = S(1 * Math.PI * v);
+   let x = (2 + .1 * cp) * ct,
+       y = (2 + .1 * cp) * st,
+       z =      .0 * sp;
    return [ x,y,z, cp*ct,cp*st,sp ];
 });
 
@@ -158,13 +169,10 @@ let octahedron = strToTris(`00Nnnn 0N0nnn N00nnn  P00pnn 0N0pnn 00Npnn
 // DEFINE ALL THE OBJECT COLORS AND SHAPES
 
 let meshData = [
-   { type: 1, color: [1.,.1,.1], mesh: new Float32Array(sphere  (20, 10)) },
-   { type: 1, color: [.1,1.,.1], mesh: new Float32Array(tube    (20,  1)) },
-   { type: 1, color: [.1,.1,1.], mesh: new Float32Array(disk    (20,  1)) },
-   { type: 1, color: [1.,1.,.1], mesh: new Float32Array(cylinder( 4,  6)) },
-   { type: 1, color: [1.,.1,1.], mesh: new Float32Array(torus   (30, 30)) },
-   { type: 0, color: [.1,1.,1.], mesh: new Float32Array(cube) },
-   { type: 0, color: [1.,1.,1.], mesh: new Float32Array(octahedron) },
+   { type: 1, color: [.6,.6,.6], mesh: new Float32Array(torus1(80, 4)) },
+   { type: 1, color: [.8,.8,.8], mesh: new Float32Array(torus2(100, 100)) },
+
+ 
 ];
 
 // VERY SIMPLE VERTEX AND FRAGMENT SHADERS
@@ -218,9 +226,9 @@ function renderFrame() {
       let s = .5 * S(2 * Math.PI * n / meshData.length);
 
       m = mIdentity   ();
-      m = mPerspective(3, m);
-      m = mRotateY    (time, m);
-      m = mTranslate  (c,s,0, m);
+      m = mPerspective(1, m);
+      m = mRotateZ    (time, m);
+      //m = mTranslate  (c,s,0, m);
       m = mScale      (.16,.16,.16, m);
 
       // SET THE VALUES OF VARIOUS UNIFORM VARIABLES

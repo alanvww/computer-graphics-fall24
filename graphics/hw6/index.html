@@ -246,23 +246,72 @@ function renderFrame() {
    let time = Date.now() / 1000 - startTime;
    M.identity().perspective(4);
 
+   // Define colors for background
+   let skyColor = [0.2, 0.8, 1.0];  
+   let grassColor = [0.2, 0.6, 0.3]; 
+   let treeColor = [0.2, 0.4, 0.1];  
+   let trunkColor = [0.4, 0.3, 0.2]; 
+
+   // Draw sky background
+   M.save();
+      M.translate(0, 0, -2);
+      M.scale(4, 4, 0.1);
+      render(Sphere, skyColor);
+   M.restore();
+
+   // Draw grass ground
+   M.save();
+      M.translate(0, -0.5, 0);
+      M.scale(4, 0.1, 2);
+      render(Sphere, grassColor);
+   M.restore();
+
+   // Function to draw a simple tree
+   function drawTree(x, z, scale) {
+      M.save();
+         // Tree trunk
+         M.translate(x, -0.3, z);
+         M.save();
+            M.scale(0.1 * scale, 0.4 * scale, 0.1 * scale);
+            render(Cylinder, trunkColor);
+         M.restore();
+
+         // Tree top (3 layers of cones for fuller look)
+         for(let i = 0; i < 3; i++) {
+            M.save();
+               M.translate(0, (0.2 + i * 0.2) * scale, 0);
+               M.scale(0.3 * scale * (1 - i * 0.2), 0.4 * scale, 0.3 * scale * (1 - i * 0.2));
+               render(Sphere, treeColor);
+            M.restore();
+         }
+      M.restore();
+   }
+
+   // Draw forest background
+   drawTree(-1.5, -1.0, 1.2); 
+   drawTree(-0.8, -1.2, 1.0);  
+   drawTree(0.5, -1.5, 1.4);   
+   drawTree(1.2, -1.3, 1.1);   
+   drawTree(-2.0, -0.8, 0.9);  
+   drawTree(1.8, -0.9, 1.0);  
+
    // DEFINE PARAMETERS THAT CONTROL THE SCENE AND THE ANIMATION
    let t = 3 * time;  // Animation speed
    let bodyLength = 0.6;  
    let bodyHeight = 0.15;  
    let legLength = 0.35; 
-   let bodyColor = [0.6, 0.4, 0.2];  // Brown color for the dog
-   let frisbeeColor = [1.0, 0.1, 0.1];  // Red color for the frisbee
-   let tailColor = [0.15, 0.05, 0.05];  // Brown color for the tail
-   let pawColor = [0.35, 0.2, 0.2];  // Brown color for the paws
-   let eyeColor = [0.1, 0.1, 0.1];  // Black color for eyes
+   let bodyColor = [0.6, 0.4, 0.2]; 
+   let frisbeeColor = [1.0, 0.1, 0.1];  
+   let tailColor = [0.15, 0.05, 0.05];  
+   let pawColor = [0.35, 0.2, 0.2];  
+   let eyeColor = [0.1, 0.1, 0.1];  
    
    // Running motion parameters
-   let bodyBob = .15 * Math.sin(t * 2);  // Vertical body motion
+   let bodyBob = .05 * Math.sin(t * 2);  // Vertical body motion
    let bodyTilt = 0.2 * Math.sin(t*2);  // Body tilt while running
    let tailRotation = -Math.PI/2 + Math.cos(t * 2);  // Tail rotation angle
 
-   M.translate(0, .2 + bodyBob, 0).rotateY(-Math.PI/3);
+   M.translate(-0.2, 0.05 + bodyBob, 0.5).rotateY(-Math.PI/3);
 
    // Main body
    M.save();

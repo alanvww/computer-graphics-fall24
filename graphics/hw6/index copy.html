@@ -243,151 +243,60 @@ let render = (Shape, color) => {
 let startTime = Date.now() / 1000;
 function renderFrame() {
    requestAnimationFrame(renderFrame);
-   let time = Date.now() / 1000 - startTime;
-   M.identity().perspective(4);
+   let time = Date.now() / 1000 - startTime, m;
+
+   M.identity().perspective(3);
 
    // DEFINE PARAMETERS THAT CONTROL THE SCENE AND THE ANIMATION
-   let t = 3 * time;  // Animation speed
-   let bodyLength = 0.6;  
-   let bodyHeight = 0.15;  
-   let legLength = 0.35; 
-   let bodyColor = [0.6, 0.4, 0.2];  // Brown color for the dog
-   let frisbeeColor = [1.0, 0.1, 0.1];  // Red color for the frisbee
-   let tailColor = [0.15, 0.05, 0.05];  // Brown color for the tail
-   let pawColor = [0.35, 0.2, 0.2];  // Brown color for the paws
-   let eyeColor = [0.1, 0.1, 0.1];  // Black color for eyes
-   
-   // Running motion parameters
-   let bodyBob = .15 * Math.sin(t * 2);  // Vertical body motion
-   let bodyTilt = 0.2 * Math.sin(t*2);  // Body tilt while running
-   let tailRotation = -Math.PI/2 + Math.cos(t * 2);  // Tail rotation angle
 
-   M.translate(0, .2 + bodyBob, 0).rotateY(-Math.PI/3);
+   let t = 2 * time;
+   let limbLength = .4;
+   let hipWidth = limbLength / 4;
+   let hipSway = .1 * C(t);
+   let phaseDiff = 1;//.5 + .5 * S(time);
+   let skinColor = [0,.5,1];
 
-   // Main body
+   // ANIMATE AND RENDER THE SCENE
+
+// M.translate(0,.4,0).rotateY(-Math.PI/2 + S(time));
+   M.translate(0,.4,0).rotateY(-Math.PI/3);
+
+   M.rotateX(hipSway);
    M.save();
-      M.scale(bodyLength, bodyHeight, bodyHeight);
-      render(Sphere, bodyColor);
+      M.scale(.05,.05,hipWidth);
+      render(Sphere, skinColor);              // PELVIS
    M.restore();
-
-   // Head with eyes and ears
-   M.save();
-      M.translate(bodyLength * 0.9, bodyHeight * 0.7, 0);
-      M.rotateZ(-0.2 + bodyTilt);  // Head bob with body motion
-      
-      // Head sphere
-      M.scale(0.15, 0.15, 0.15);
-      render(Sphere, bodyColor);
-
-      // Eyes
+   for (let side = -1 ; side <= 1 ; side += 2) {
+      let knee = .5 + .5 * S(t + side * Math.PI/2 * phaseDiff);
       M.save();
-         // Left eye
-         M.translate(bodyLength * 0.8, bodyHeight * 1.7+0.3, -0.7);
-         M.scale(0.2, 0.2, 0.2);
-         render(Sphere, eyeColor);
-      M.restore();
-
-      M.save();
-         // Right eye
-         M.translate(bodyLength * 0.8, bodyHeight * 1.7+.3, 0.7);
-         M.scale(0.2, 0.2, 0.2);
-         render(Sphere, eyeColor);
-      M.restore();
-      
-      // Left ear
-      M.save();
-         M.translate(-0.3, 0.8, -0.7);
-         M.rotateZ(Math.PI/4);
-         M.rotateX(Math.PI/4);
-         M.scale(0.3, 0.6, 0.2);
-         render(Sphere, bodyColor);
-      M.restore();
-      
-      // Right ear
-      M.save();
-         M.translate(-0.3, 0.8, 0.7);
-         M.rotateZ(Math.PI/4);
-         M.rotateX(-Math.PI/4);
-         M.scale(0.3, 0.6, 0.2);
-         render(Sphere, bodyColor);
-      M.restore();
-
-      // Snout
-      M.save();
-         M.translate(0.8, -0.1, 0);
-         M.scale(0.8, .4, 0.5);
-         render(Sphere, bodyColor);
-      M.restore();
-
-      // Frisbee
-      M.save();
-         M.translate(2.5, -0.1, 0);
-         M.scale(1.5, .2, 1.7);
-         render(Sphere, frisbeeColor);
-      M.restore();
-   M.restore();
-
-   // Tail
-   M.save();
-      // Move to tail attachment point on body
-      M.translate(-bodyLength * 0.7, bodyHeight * 0.3, 0);
-      
-      // Rotate the tail from its base
-      M.rotateZ(tailRotation);
-      
-      // Draw the tail extending from the attachment point
-      M.save();
-         // Move to center of tail
-         M.translate(0, -0.15, 0);  // Move half the tail length
-         // Scale the tail
-         M.scale(0.05, 0.25, 0.08);
-         // Render the tail
-         render(Sphere, tailColor);
-      M.restore();
-   M.restore();
-
-   // Legs
-   let phase1 = t;
-   let phase2 = t + Math.PI;
-   
-   function drawLeg(side, phase, isBack) {
-      let x = isBack ? -bodyLength * 0.5 : bodyLength * 0.4;
-      let kneeAngle = .1 + 0.6 * Math.sin(phase);
-      
-      M.save();
-         M.translate(x, 0, side * bodyHeight * 0.8);
-         M.rotateZ(kneeAngle);
-         
-         // Upper leg
+         M.translate(0,0,side * hipWidth);
+         M.rotateX(-hipSway);
+         M.rotateZ(knee);
          M.save();
-            M.translate(0, -legLength * 0.3, 0);
-            M.scale(0.06, legLength * 0.3, 0.06);
-            render(Sphere, bodyColor);
+            M.translate(0,-limbLength/2,0);
+            M.scale(.05,limbLength/2,.05);
+            render(Sphere, skinColor);        // UPPER LEG
          M.restore();
-         
-         // Lower leg
-         M.translate(0, -legLength * 0.6, 0);
-         M.rotateZ(-kneeAngle * 1.);
+         M.translate(0,-limbLength,0);
          M.save();
-            M.translate(0, -legLength * 0.3, 0);
-            M.scale(0.04, legLength * 0.3, 0.04);
-            render(Sphere, bodyColor);
+            M.rotateZ(-2 * knee);
+            M.save();
+               M.translate(0,-limbLength/2,0);
+               M.scale(.05,limbLength/2,.05);
+               render(Sphere, skinColor);     // LOWER LEG
+            M.restore();
+            M.translate(0,-limbLength,0);
+            M.save();
+               M.translate(limbLength/4,0,0);
+	       M.scale(limbLength/4,.05,.05);
+               render(Sphere, skinColor);     // FOOT
+            M.restore();
          M.restore();
-         
-         // Paw
-         M.translate(0, -legLength * 0.6, 0);
-         M.scale(0.07, 0.04, 0.07);
-         render(Sphere, pawColor);
       M.restore();
    }
-
-   // Draw all four legs with diagonal pairs moving together
-   drawLeg(1, phase1, false);  // Front-right
-   drawLeg(-1, phase1, true);  // Back-left
-   drawLeg(-1, phase2, false);  // Front-left
-   drawLeg(1, phase2, true);  // Back-right
 }
 requestAnimationFrame(renderFrame);
 
 </script>
+
 

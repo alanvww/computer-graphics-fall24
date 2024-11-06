@@ -1,5 +1,13 @@
 <body bgcolor=black>
-<center><canvas id='canvas1' width=800 height=800></canvas>
+   <center>
+      <canvas id='canvas1' width=800 height=800></canvas>
+      <br>
+      <div style="color: white; margin: 10px;">
+         Animation Speed Control:
+         <input type="range" id="speedSlider" min="0.1" max="5" step="0.1" value="1" style="width: 200px;">
+         <span id="speedValue" style="margin-left: 10px;">1.0x</span>
+      </div>
+   </center>
 
 <script>
 
@@ -238,12 +246,121 @@ let render = (Shape, color) => {
    gl.drawArrays(Shape.type ? gl.TRIANGLE_STRIP : gl.TRIANGLES, 0, mesh.length / vertexSize);
 }
 
+let frisbeePos = { x: 2.5, y: -0.1, z: 0 }; 
+let frisbeeVelocity = { x: 0, y: 0, z: 0 };
+let dogPos = { x: -0.2, y: 0.05, z: 0.5 }; 
+let dogRotation = -Math.PI/3; 
+let isThrown = false;
+let throwStartTime = 0;
+
+// Animation timing parameters
+const FRISBEE_THROW_DURATION = 0.8; 
+const DOG_WAIT_DURATION = 0.3;   
+const DOG_CHASE_DURATION = 0.7;    
+const TOTAL_ANIMATION_DURATION = FRISBEE_THROW_DURATION + DOG_WAIT_DURATION + DOG_CHASE_DURATION;
+
+// Animation parameters
+const THROW_HEIGHT = 1.5;
+const THROW_DISTANCE = 10;
+const THROW_Z_OFFSET = -3;
+
+// Store initial positions for reference
+const INITIAL_FRISBEE_POS = { ...frisbeePos };
+const INITIAL_DOG_POS = { ...dogPos };
+const INITIAL_DOG_ROTATION = dogRotation;
+
+function screenToWebGL(x, y) {
+    let rect = canvas1.getBoundingClientRect();
+    let normalizedX = ((x - rect.left) / rect.width) * 2 - 1;
+    let normalizedY = -((y - rect.top) / rect.height) * 2 + 1;
+    let z = 0.5;
+    let scaleX = 4 * (canvas1.width / canvas1.height);
+    let scaleY = 4;
+    
+    return {
+        x: normalizedX * scaleX,
+        y: normalizedY * scaleY,
+        z: z
+    };
+}
+
+function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function updateAnimationState(time) {
+    if (!isThrown) return;
+    
+    let t = time - throwStartTime;
+    if (t > TOTAL_ANIMATION_DURATION) {
+        // Reset animation after completion
+        isThrown = false;
+        frisbeePos = { ...INITIAL_FRISBEE_POS };
+        dogPos = { ...INITIAL_DOG_POS };
+        dogRotation = INITIAL_DOG_ROTATION;
+        return;
+    }
+
+    // Update frisbee position
+    if (t <= FRISBEE_THROW_DURATION) {
+        let progress = easeInOutQuad(t / FRISBEE_THROW_DURATION);
+        frisbeePos.x = INITIAL_FRISBEE_POS.x + THROW_DISTANCE * progress;
+        frisbeePos.y = INITIAL_FRISBEE_POS.y + THROW_HEIGHT * Math.sin(Math.PI * progress);
+        frisbeePos.z = THROW_Z_OFFSET * progress;
+    }
+
+    // Update dog position after wait duration
+    if (t > DOG_WAIT_DURATION && t <= TOTAL_ANIMATION_DURATION) {
+        let chaseProgress = easeInOutQuad((t - DOG_WAIT_DURATION) / DOG_CHASE_DURATION);
+        
+        // Calculate target position (slightly behind frisbee's final position)
+        let targetX = INITIAL_FRISBEE_POS.x + THROW_DISTANCE - 1;
+        let targetZ = THROW_Z_OFFSET + 0.5;
+
+        // Update dog position
+        dogPos.x = INITIAL_DOG_POS.x + (targetX - INITIAL_DOG_POS.x) * chaseProgress;
+        dogPos.z = INITIAL_DOG_POS.z + (targetZ - INITIAL_DOG_POS.z) * chaseProgress;
+
+        // Update dog rotation to face direction of movement
+        let targetRotation = Math.atan2(targetZ - INITIAL_DOG_POS.z, targetX - INITIAL_DOG_POS.x);
+        dogRotation = INITIAL_DOG_ROTATION + (targetRotation - INITIAL_DOG_ROTATION) * chaseProgress;
+    }
+}
+
+canvas1.addEventListener('mousedown', function(e) {
+    let coords = screenToWebGL(e.clientX, e.clientY);
+    
+    // Check if click is near the frisbee
+    let dx = coords.x - frisbeePos.x;
+    let dy = coords.y - frisbeePos.y;
+    let distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance < 1.0 && !isThrown) {
+        isThrown = true;
+        throwStartTime = Date.now() / 1000;
+    }
+});
+
+
+// Add global variable for animation speed
+let animationSpeed = 1.0;
+
+// Add event listener for slider
+document.getElementById('speedSlider').addEventListener('input', function(e) {
+    animationSpeed = parseFloat(e.target.value);
+    document.getElementById('speedValue').textContent = animationSpeed.toFixed(1) + 'x';
+});
+
+
 // THE ANIMATION LOOP
 
 let startTime = Date.now() / 1000;
 function renderFrame() {
    requestAnimationFrame(renderFrame);
-   let time = Date.now() / 1000 - startTime;
+   let time = (Date.now() / 1000 - startTime) * animationSpeed;
+
+   updateAnimationState(time);
+
    M.identity().perspective(4);
 
    // Define colors for background
@@ -304,14 +421,17 @@ function renderFrame() {
    let frisbeeColor = [1.0, 0.1, 0.1];  
    let tailColor = [0.15, 0.05, 0.05];  
    let pawColor = [0.35, 0.2, 0.2];  
-   let eyeColor = [0.1, 0.1, 0.1];  
+   let eyeColor = [0.1, 0.1, 0.1]; 
    
-   // Running motion parameters
-   let bodyBob = .05 * Math.sin(t * 2);  // Vertical body motion
-   let bodyTilt = 0.2 * Math.sin(t*2);  // Body tilt while running
-   let tailRotation = -Math.PI/2 + Math.cos(t * 2);  // Tail rotation angle
+   
 
-   M.translate(-0.2, 0.05 + bodyBob, 0.5).rotateY(-Math.PI/3);
+   // Running motion parameters
+   let bodyBob = .05 * Math.sin(t * 2);  
+   let bodyTilt = 0.2 * Math.sin(t*2); 
+   let tailRotation = -Math.PI/2 + Math.cos(t * 2);  
+
+   M.translate(dogPos.x, dogPos.y, dogPos.z)
+   .rotateY(dogRotation);
 
    // Main body
    M.save();
@@ -322,7 +442,7 @@ function renderFrame() {
    // Head with eyes and ears
    M.save();
       M.translate(bodyLength * 0.9, bodyHeight * 0.7, 0);
-      M.rotateZ(-0.2 + bodyTilt);  // Head bob with body motion
+      M.rotateZ(-0.2 + bodyTilt); 
       
       // Head sphere
       M.scale(0.15, 0.15, 0.15);
@@ -368,29 +488,25 @@ function renderFrame() {
          render(Sphere, bodyColor);
       M.restore();
 
-      // Frisbee
-      M.save();
-         M.translate(2.5, -0.1, 0);
-         M.scale(1.5, .2, 1.7);
-         render(Sphere, frisbeeColor);
-      M.restore();
+      if (!isThrown) {
+        M.save();
+            M.translate(frisbeePos.x, frisbeePos.y, frisbeePos.z);
+            M.rotateZ(time * 5); // Spinning animation
+            M.rotateX(Math.PI/6);
+            M.scale(1.5, .2, 1.7);
+            render(Sphere, frisbeeColor);
+        M.restore();
+       }
    M.restore();
 
    // Tail
    M.save();
-      // Move to tail attachment point on body
       M.translate(-bodyLength * 0.7, bodyHeight * 0.3, 0);
-      
-      // Rotate the tail from its base
       M.rotateZ(tailRotation);
       
-      // Draw the tail extending from the attachment point
       M.save();
-         // Move to center of tail
-         M.translate(0, -0.15, 0);  // Move half the tail length
-         // Scale the tail
+         M.translate(0, -0.15, 0); 
          M.scale(0.05, 0.25, 0.08);
-         // Render the tail
          render(Sphere, tailColor);
       M.restore();
    M.restore();

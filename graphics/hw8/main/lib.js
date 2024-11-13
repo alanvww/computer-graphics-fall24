@@ -143,6 +143,18 @@ let torus = (nu, nv, r, t) => createMesh(nu, nv, (u,v) => {
        z =      r * Math.max(-t, Math.min(t, sp));
    return [ x,y,z, cp*ct,cp*st,sp ];
 });
+
+let customizedShape = (nu, nv) => createMesh(nu, nv, (u,v) => {
+   let ct = C(2* Math.PI * u);
+   let st = S(2 * Math.PI * u);
+   let cp = C(1 * Math.PI * v);
+   let sp = S(1 * Math.PI * v);
+   let x = (1.5 + 1 * cp) * ct,
+       y = (1.5 + 1 * cp) * st,
+       z =    ( st* ct) * sp;
+   return [ x,y,z, cp*ct,cp*st,sp ];
+});
+
 let strToTris = s => {
    let t = [], i;
    for (let n = 0 ; n < s.length ; n++)
@@ -168,6 +180,7 @@ let Disk     = n       => { return { type: 1, mesh: disk    (n, 1) }; }
 let Sphere   = n       => { return { type: 1, mesh: sphere  (n, n>>1) }; }
 let Square   = ()      => { return { type: 0, mesh: square }; }
 let Torus    = (n,r,t) => { return { type: 1, mesh: torus   (n, n, r, t) }; }
+let CustomizedShape    = (n,r,t) => { return { type: 1, mesh: customizedShape   (n, n, r, t) }; }
 let Tube     = n       => { return { type: 1, mesh: tube    (n, 1) }; }
 
 // GPU SHADERS

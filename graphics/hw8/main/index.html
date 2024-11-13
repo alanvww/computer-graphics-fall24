@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+   <style>
+      body {
+         margin: 0;
+      }
+
+      canvas {
+         display: block;
+      }
+
+      #textureCanvas {
+         position: absolute;
+         left: -1000px;
+      }
+   </style>
+</head>
+
+<body bgcolor="#ffffff">
+   <canvas id="textureCanvas" width="512" height="512"></canvas>
+   <center>
+      <canvas id="canvas1" width="800" height="800"></canvas>
+   </center>
+   <script src="lib.js"></script>
+
+   <script>
+      // Cell class for managing animated rectangles
+      class Cell {
+         constructor(x, y, size) {
+            this.x = x;
+            this.y = y;
+            this.size = size;
+            this.rectangles = [];
+
+            // Create rectangles with random speeds
+            for (let i = 3; i > 0; i--) {
+               this.rectangles.push({
+                  width: i * 4 + this.size / 8,
+                  height: i * 4 + this.size / 8,
+                  x: this.x + 3,
+                  y: this.y + 3,
+                  speedX: (Math.random() * 2 - 1),  // Random speed between -1 and 1
+                  speedY: (Math.random() * 2 - 1)
+               });
+            }
+
+            // Generate random RGB colors
+            this.colors = Array(3).fill().map(() => ({
+               r: Math.random() * 155 + 100,  // Random between 100-255
+               g: Math.random() * 155 + 100,
+               b: Math.random() * 155 + 100
+            }));
+         }
+
+         update() {
+            for (let rect of this.rectangles) {
+               rect.x += rect.speedX;
+               rect.y += rect.speedY;
+
+               // Bounce off cell boundaries
+               if (rect.x <= this.x || rect.x + rect.width >= this.x + this.size) {
+                  rect.speedX *= -1;
+               }
+               if (rect.y <= this.y || rect.y + rect.height >= this.y + this.size) {
+                  rect.speedY *= -1;
+               }
+            }
+         }
+
+         display(ctx) {
+            // Draw cell border
+            ctx.strokeStyle = 'rgb(50, 50, 50)';
+            ctx.strokeRect(this.x, this.y, this.size, this.size);
+
+            // Draw rectangles
+            this.rectangles.forEach((rect, index) => {
+               const color = this.colors[index];
+               ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+               ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+            });
+         }
+      }
+
+      // Initialize cells
+      const cellSize = 16*4;
+      const canvasWidth = 512;
+      const canvasHeight = 512;
+      const cols = canvasWidth / cellSize;
+      const rows = canvasHeight / cellSize;
+      const cells = [];
+
+      // Create cell grid
+      for (let y = 0; y < rows; y++) {
+         for (let x = 0; x < cols; x++) {
+            cells.push(new Cell(x * cellSize, y * cellSize, cellSize));
+         }
+      }
+
+      // Get canvas context
+      const textureCanvas = document.getElementById('textureCanvas');
+      const ctx = textureCanvas.getContext('2d');
+
+      // Animation function for the texture canvas
+      function updateTexture() {
+         // Clear canvas with black background
+         ctx.fillStyle = 'black';
+         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+         // Update and display all cells
+         for (let cell of cells) {
+            cell.update();
+            cell.display(ctx);
+         }
+
+         // Request next frame
+         requestAnimationFrame(updateTexture);
+      }
+
+      // Start the texture animation
+      updateTexture();
+
+      // 3D Scene setup
+      texture(0, textureCanvas);
+
+      // 3D Scene animation
+      function drawFrame() {
+         requestAnimationFrame(drawFrame);
+         let t = Date.now() / 1000;
+
+         M.S().perspective(3);
+         M.S().move(-.3, 0, 0).turnY(t).turnX(t).scale(.3).draw(Cube(), [1, 1, 1], 1, 0).R();
+         M.S().move(.7, 0, 0).turnX(t).turnY(t).scale(.2).draw(Torus(12), [1, 1, 1], 1, 0).R();
+         M.R();
+      }
+
+      // Start the 3D scene animation
+      requestAnimationFrame(drawFrame);
+   </script>
+</body>
+
+</html>

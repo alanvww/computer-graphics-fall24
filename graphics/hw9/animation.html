@@ -1,0 +1,225 @@
+<body bgcolor=black>
+    <center>
+        <canvas id='canvas1' width=800 height=800></canvas>
+
+        <script>
+            let start_gl = (canvas, meshData, vertexSize, vertexShader, fragmentShader) => {
+                let gl = canvas.getContext("webgl");
+                let program = gl.createProgram();
+                gl.program = program;
+                let addshader = (type, src) => {
+                    let shader = gl.createShader(type);
+                    gl.shaderSource(shader, src);
+                    gl.compileShader(shader);
+                    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+                        throw "Cannot compile shader:\n\n" + gl.getShaderInfoLog(shader);
+                    gl.attachShader(program, shader);
+                };
+                addshader(gl.VERTEX_SHADER, vertexShader);
+                addshader(gl.FRAGMENT_SHADER, fragmentShader);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+                    throw "Could not link the shader program!";
+                gl.useProgram(program);
+                gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LEQUAL);
+                let vertexAttribute = (name, size, position) => {
+                    let attr = gl.getAttribLocation(program, name);
+                    gl.enableVertexAttribArray(attr);
+                    gl.vertexAttribPointer(attr, size, gl.FLOAT, false, vertexSize * 4, position * 4);
+                }
+                vertexAttribute('aPos', 3, 0);
+                return gl;
+            }
+
+            function bezier(t, p0, p1, p2, p3) {
+                let mt = 1 - t;
+                return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+            }
+
+            let meshData = [
+                { type: 1, mesh: new Float32Array([-1, 1, 0, 1, 1, 0, -1, -1, 0, 1, -1, 0]) },
+            ];
+
+            const NSPHERES = 5;
+
+            const sphereColors = [
+                [0.4, 0.4, 0.6],
+                [0.4, 0.3, 0.7],
+                [0.4, 0.2, 0.8],
+                [0.4, 0.1, 0.9],
+                [0.4, 0.0, 1.0],
+            ];
+            const flattenedColors = sphereColors.flat();
+
+            const splinePoints = [
+                [
+                    [{ x: -0.5, y: -0.5 }, { x: -0.5, y: 0 }, { x: 0.5, y: 0 },  { x: -0.5, y: -0.5 }],
+                    [{ x: -0.5, y: -0.5 }, { x: -0.5, y: 0 }, { x: 0.5, y: 0 },  { x: -0.5, y: -0.5 }],
+                ],
+                [
+                    [{ x: 0.5, y: 0.5 }, { x: 0.5, y: -0.5 }, { x: -0.5, y: -0.5 }, { x: 0.5, y: 0.5 }],
+                    [{ x: 0.5, y: 0.5 }, { x: 0.5, y: -0.5 }, { x: -0.5, y: -0.5 }, { x: 0.5, y: 0.5 }],
+                ],
+                [
+                    [{ x: -0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: -0.5 }, { x: -0.5, y: 0.5 }],
+                    [{ x: -0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: -0.5 }, { x: -0.5, y: 0.5 }],
+                ],
+                [
+                    [{ x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }, { x: 0.5, y: -0.5 } ],
+                    [{ x: 0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: -0.5, y: 0.5 }, { x: 0.5, y: -0.5 } ],
+                ],
+                [
+                    [{ x: -0.5, y: -0.5 }, { x:-0.5, y: 0.5 }, { x: 0.5, y: -0.5 }, { x: -0.5, y: -0.5 }],
+                    [{ x: -0.5, y: -0.5 }, { x:-0.5, y: 0.5 }, { x: 0.5, y: -0.5 }, { x: -0.5, y: -0.5 }],
+                ]
+            ];
+
+            function getSplinePosition(t, points) {
+                const numSegments = points.length;
+                const segment = Math.floor(t * numSegments);
+                const segmentT = (t * numSegments) % 1;
+                const currentPoints = points[segment];
+
+                return {
+                    x: bezier(segmentT,
+                        currentPoints[0].x,
+                        currentPoints[1].x,
+                        currentPoints[2].x,
+                        currentPoints[3].x),
+
+                    y: bezier(segmentT,
+                        currentPoints[0].y,
+                        currentPoints[1].y,
+                        currentPoints[2].y,
+                        currentPoints[3].y, 
+                       ),
+
+                };
+            }
+
+            let vertexSize = 3;
+            let vertexShader = `
+    attribute vec3 aPos;
+    varying   vec3 vPos;
+    void main() {
+       gl_Position = vec4(aPos, 1.0);
+       vPos = aPos;
+    }
+ `;
+            let fragmentShader = `
+ precision mediump float;
+ uniform float uTime, uFL;
+ uniform vec3  uCursor;
+ uniform vec4  uSpheres[5];
+ uniform vec3  uSphereColors[5];
+ varying vec3  vPos;
+ 
+ vec3 bgColor = vec3(.05,0.,.05);
+ 
+ float noise(vec3 point) {
+     float r = 0.;
+     for (int i=0;i<16;i++) {
+         vec3 D, p = point + mod(vec3(i,i/4,i/8) , vec3(4.0,2.0,2.0)) +
+             1.7*sin(vec3(float(i),5.*float(i),8.*float(i))), C=floor(p), P=p-C-.5, A=abs(P);
+         C += mod(C.x+C.y+C.z,2.) * step(max(A.yzx,A.zxy),A) * sign(P);
+         D=34.*sin(987.*float(i)+876.*C+76.*C.yzx+765.*C.zxy);P=p-C-.5;
+         r+=sin(6.3*dot(P,fract(D)-.5))*pow(max(0.,1.-2.*dot(P,P)),4.);
+     }
+     return .1 * sin(r);
+ }
+ 
+ float raySphere(vec3 V, vec3 W, vec3 C, float r) {
+     V -= C;
+     float VV = dot(V,V);
+     float VW = dot(V,W);
+     float d = VW * VW - (VV - r*r);
+     if (d > 0.)
+         return -VW - sqrt(d);
+     return -1.;
+ }
+ 
+ void main(void) {
+     vec3 color = bgColor;
+     vec3 V = vec3(0.,0.,1.);
+     vec3 W = normalize(vec3(vPos.xy,-uFL));
+     vec3 L = normalize(vec3(1.0, 1.0, 1.0));
+     vec3 highlight = vec3(1.0);
+     float power = 20.0;
+ 
+     float tMin = 1000.;
+     for (int i = 0 ; i < 5 ; i++) {
+         vec3  C = uSpheres[i].xyz;
+         float r = uSpheres[i].w;
+         float t = raySphere(V, W, C, r);
+         if (t > 0. && t < tMin) {
+             tMin = t;
+             vec3 P = V + t * W;
+             vec3 N = normalize(P - C);
+             vec3 sphereColor = uSphereColors[i];
+             float noiseValue = noise(P * 2.0 + vec3(uTime * .5));
+             sphereColor = mix(sphereColor, vec3(noiseValue), -1.05);
+             color = 0.5 * sphereColor;
+ 
+             bool inShadow = false;
+             for (int j = 0 ; j < 5 ; j++)
+                 if (j != i) {
+                     vec3  SC = uSpheres[j].xyz;
+                     float sr = uSpheres[j].w;
+                     if (raySphere(P + N * 0.001, L, SC, sr) > 0.)
+                         inShadow = true;
+                 }
+ 
+             if (!inShadow) {
+                 vec3 d = sphereColor * max(0., dot(N,L));
+                 vec3 R = reflect(-L, N);
+                 vec3 s = highlight * pow(max(0., dot(R, -W)), power);
+                 color += d + s;
+             }
+         }
+     }
+     gl_FragColor = vec4(sqrt(color), 1.);
+ }
+ `;
+
+            setTimeout(() => {
+                let gl = start_gl(canvas1, meshData, vertexSize, vertexShader, fragmentShader);
+                let uFL = gl.getUniformLocation(gl.program, "uFL");
+                let uTime = gl.getUniformLocation(gl.program, "uTime");
+                let uCursor = gl.getUniformLocation(gl.program, "uCursor");
+                let uSpheres = gl.getUniformLocation(gl.program, "uSpheres");
+                let uSphereColors = gl.getUniformLocation(gl.program, "uSphereColors");
+
+                let startTime = Date.now() / 1000;
+
+                setInterval(() => {
+                    let time = Date.now() / 1000 - startTime;
+                    gl.uniform1f(uTime, time);
+                    gl.uniform3fv(uCursor, [0, 0, 0]);
+                    gl.uniform1f(uFL, 3);
+
+                    let data = [];
+                    for (let n = 0; n < NSPHERES; n++) {
+                        let t = (time * 0.2 + n * 0.2) % 1;
+                        let pos = getSplinePosition(t, splinePoints[n]);
+
+                        let z = -1 - n * 0.8;
+                        let size = 0.25 + n * 0.18;
+
+                        data.push(pos.x, pos.y, z, size);
+                    }
+
+                    gl.uniform4fv(uSpheres, data);
+                    gl.uniform3fv(uSphereColors, flattenedColors);
+
+                    for (let n = 0; n < meshData.length; n++) {
+                        let mesh = meshData[n].mesh;
+                        gl.bufferData(gl.ARRAY_BUFFER, mesh, gl.STATIC_DRAW);
+                        gl.drawArrays(meshData[n].type ? gl.TRIANGLE_STRIP : gl.TRIANGLES, 0, mesh.length / vertexSize);
+                    }
+                }, 30);
+            }, 100);
+        </script>
+    </center>
+</body>

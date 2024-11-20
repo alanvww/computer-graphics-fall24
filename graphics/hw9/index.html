@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Spline Edtior - Alan Ren</title>
+    <style>
+        * {
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        h1 {
+            margin: auto;
+            text-align: center;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        canvas {
+            border: 1px solid #ccc;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .color-box {
+            width: 20px;
+            height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Spline Edtior - Alan Ren</h1>
+    <div class="container">
+        <canvas id="canvas" width="800" height="800"></canvas>
+        <div class="controls">
+            <button onclick="generateRandomPoints()">Random Points</button>
+            <button onclick="addPoint()">Add Point</button>
+            <button onclick="clearPoints()">Clear Points</button>
+        </div>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="color-box" style="background: #8f4c00"></div>
+                <span>Catmull-Rom</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background: #00827a"></div>
+                <span>Bezier</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let points = [];
+        let selectedPoint = null;
+        let isDragging = false;
+
+        function mapToCanvas(x, y) {
+            const xScale = canvas.width / 10;
+            const yScale = canvas.height / 10;
+            return {
+                x: (x + 5) * xScale,
+                y: canvas.height - (y + 5) * yScale
+            };
+        }
+
+        function mapFromCanvas(canvasX, canvasY) {
+            const xScale = canvas.width / 10;
+            const yScale = canvas.height / 10;
+            return {
+                x: (canvasX / xScale - 5).toFixed(2),
+                y: (-(canvasY - canvas.height) / yScale - 5).toFixed(2)
+            };
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = '#eee';
+            ctx.lineWidth = 1;
+
+            for (let x = -5; x <= 5; x++) {
+                const pos = mapToCanvas(x, 0);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, 0);
+                ctx.lineTo(pos.x, canvas.height);
+                ctx.stroke();
+            }
+
+            for (let y = -5; y <= 5; y++) {
+                const pos = mapToCanvas(0, y);
+                ctx.beginPath();
+                ctx.moveTo(0, pos.y);
+                ctx.lineTo(canvas.width, pos.y);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            const origin = mapToCanvas(0, 0);
+            ctx.beginPath();
+            ctx.moveTo(0, origin.y);
+            ctx.lineTo(canvas.width, origin.y);
+            ctx.moveTo(origin.x, 0);
+            ctx.lineTo(origin.x, canvas.height);
+            ctx.stroke();
+        }
+
+        function factorial(n) {
+            if (n <= 1) return 1;
+            return n * factorial(n - 1);
+        }
+
+        function bernstein(n, i, t) {
+            return (factorial(n) / (factorial(i) * factorial(n - i)))
+                * Math.pow(t, i)
+                * Math.pow(1 - t, n - i);
+        }
+
+        function drawBezierSpline() {
+            if (points.length < 2) return;
+
+            ctx.strokeStyle = '#00827a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const n = points.length - 1;
+            const segments = 100;
+
+            let firstPoint = true;
+            for (let t = 0; t <= 1; t += 1 / segments) {
+                let x = 0;
+                let y = 0;
+
+                for (let i = 0; i <= n; i++) {
+                    const b = bernstein(n, i, t);
+                    x += points[i].x * b;
+                    y += points[i].y * b;
+                }
+
+                const pos = mapToCanvas(x, y);
+                if (firstPoint) {
+                    ctx.moveTo(pos.x, pos.y);
+                    firstPoint = false;
+                } else {
+                    ctx.lineTo(pos.x, pos.y);
+                }
+            }
+            ctx.stroke();
+        }
+
+        function drawCatmullRomSpline() {
+            if (points.length < 2) return;
+
+            ctx.strokeStyle = '#8f4c00';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const extendedPoints = [
+                {
+                    x: points[0].x - (points[1].x - points[0].x),
+                    y: points[0].y - (points[1].y - points[0].y)
+                },
+                ...points,
+                {
+                    x: points[points.length - 1].x + (points[points.length - 1].x - points[points.length - 2].x),
+                    y: points[points.length - 1].y + (points[points.length - 1].y - points[points.length - 2].y)
+                }
+            ];
+
+            const segments = 100;
+            let firstPoint = true;
+
+            for (let i = 0; i < extendedPoints.length - 3; i++) {
+                for (let t = 0; t <= 1; t += 1 / segments) {
+                    const p0 = extendedPoints[i];
+                    const p1 = extendedPoints[i + 1];
+                    const p2 = extendedPoints[i + 2];
+                    const p3 = extendedPoints[i + 3];
+
+                    const t2 = t * t;
+                    const t3 = t2 * t;
+
+                    const x = 0.5 * (
+                        (-t3 + 2 * t2 - t) * p0.x +
+                        (3 * t3 - 5 * t2 + 2) * p1.x +
+                        (-3 * t3 + 4 * t2 + t) * p2.x +
+                        (t3 - t2) * p3.x
+                    );
+
+                    const y = 0.5 * (
+                        (-t3 + 2 * t2 - t) * p0.y +
+                        (3 * t3 - 5 * t2 + 2) * p1.y +
+                        (-3 * t3 + 4 * t2 + t) * p2.y +
+                        (t3 - t2) * p3.y
+                    );
+
+                    const pos = mapToCanvas(x, y);
+                    if (firstPoint) {
+                        ctx.moveTo(pos.x, pos.y);
+                        firstPoint = false;
+                    } else {
+                        ctx.lineTo(pos.x, pos.y);
+                    }
+                }
+            }
+            ctx.stroke();
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+
+            // Draw line segments
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (points.length > 0) {
+                const startPos = mapToCanvas(points[0].x, points[0].y);
+                ctx.moveTo(startPos.x, startPos.y);
+                for (let i = 1; i < points.length; i++) {
+                    const pos = mapToCanvas(points[i].x, points[i].y);
+                    ctx.lineTo(pos.x, pos.y);
+                }
+                ctx.stroke();
+            }
+
+            drawBezierSpline();
+            drawCatmullRomSpline();
+
+            // Draw points
+            points.forEach((point, index) => {
+                const pos = mapToCanvas(point.x, point.y);
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+                ctx.fillStyle = selectedPoint === index ? '#ff0000' : '#000';
+                ctx.fill();
+
+                // Draw coordinates
+                ctx.fillStyle = '#000';
+                ctx.font = '12px Arial';
+                ctx.fillText(`(${point.x}, ${point.y})`, pos.x + 10, pos.y - 10);
+            });
+        }
+
+        function generateRandomPoints() {
+            points = Array(5).fill().map((_, i) => ({
+                x: -4 + i,
+                y: Math.random() * 6 - 3
+            }));
+            render();
+        }
+
+        function addPoint() {
+            if (points.length === 0) {
+                points.push({ x: -4, y: 0 });
+            } else {
+                const lastPoint = points[points.length - 1];
+                points.push({
+                    x: parseFloat(lastPoint.x) + 1,
+                    y: 0
+                });
+            }
+            render();
+        }
+
+        function clearPoints() {
+            points = [];
+            render();
+        }
+
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            points.forEach((point, index) => {
+                const pos = mapToCanvas(point.x, point.y);
+                const dx = mouseX - pos.x;
+                const dy = mouseY - pos.y;
+                if (Math.sqrt(dx * dx + dy * dy) < 6) {
+                    selectedPoint = index;
+                    isDragging = true;
+                }
+            });
+
+            if(!isDragging){
+                const mousePos = mapFromCanvas(
+                        e.clientX - rect.left,
+                        e.clientY - rect.top
+                    );
+                    points.push({
+                        x: parseFloat(mousePos.x),
+                        y: parseFloat(mousePos.y)
+                    });
+                    render()
+            }
+
+
+
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDragging || selectedPoint === null) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mousePos = mapFromCanvas(
+                e.clientX - rect.left,
+                e.clientY - rect.top
+            );
+
+            points[selectedPoint].y = parseFloat(mousePos.y);
+            points[selectedPoint].x = parseFloat(mousePos.x);
+
+            render();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            selectedPoint = null;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+            selectedPoint = null;
+        });
+
+        generateRandomPoints();
+    </script>
+</body>
+
+</html>

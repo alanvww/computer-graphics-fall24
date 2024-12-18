@@ -590,7 +590,7 @@
                     const basePos = [
                         (legName.includes('front') ? cornerOffset : -cornerOffset),
                         0, // Start from the seat bottom
-                        (legName.includes('Left') ? cornerOffset : -cornerOffset)
+                        (legName.includes('Left') ? -cornerOffset : cornerOffset)
                     ];
 
                     const springPos = leg.spring.getPosition();

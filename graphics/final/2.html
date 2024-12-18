@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>QWOP-Style Chair Physics Simulator</title>
+    <style>
+        /* Reset default margins and handle overflow */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Courier New', monospace;
+            color: white;
+        }
+
+        /* Ensure canvas fills available space */
+        canvas {
+            display: block;
+        }
+
+        /* Enhanced controls panel with better visibility */
+        .controls {
+            position: absolute;
+            left: 20px;
+            top: 20px;
+            color: white;
+            z-index: 1;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Improved slider styling */
+        .slider-container {
+            margin: 15px 0;
+        }
+
+        input[type="range"] {
+            width: 200px;
+            margin-right: 10px;
+            background: #2a2a2a;
+            height: 8px;
+            border-radius: 4px;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #4CAF50;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* Enhanced instructions panel */
+        .instructions {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Status display for debugging */
+        .status {
+            position: absolute;
+            left: 20px;
+            bottom: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .key {
+            display: inline-block;
+            padding: 5px 10px;
+            background-color: #333;
+            border-radius: 4px;
+            margin: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <h3>Chair Configuration</h3>
+        <div class="slider-container">
+            <input type="range" id="seatWidthSlider" value="20" max="50" min="10">
+            <span>Seat Width</span>
+        </div>
+        <div class="slider-container">
+            <input type="range" id="legLengthSlider" value="100" max="200" min="10">
+            <span>Leg Length</span>
+        </div>
+        <div class="slider-container">
+            <input type="range" id="jointSpeedSlider" value="5" max="10" min="1">
+            <span>Joint Speed</span>
+        </div>
+        <div class="slider-container">
+            <input type="color" id="chairColorPicker" value="#4A90E2">
+            <span>Chair Color</span>
+        </div>
+    </div>
+
+    <div class="instructions">
+        <h3>How to Play</h3>
+        <p>Control the chair legs to maintain balance and move:</p>
+        <p><span class="key">Q</span> Front Left Leg Joints</p>
+        <p><span class="key">W</span> Front Right Leg Joints</p>
+        <p><span class="key">O</span> Back Left Leg Joints</p>
+        <p><span class="key">P</span> Back Right Leg Joints</p>
+        <p><span class="key">Mouse</span> Rotate Camera View</p>
+        <p><span class="key">R</span> Reset Position</p>
+    </div>
+
+    <div class="status" id="statusPanel">
+        Balance: 100%<br>
+        Height: 0.00m<br>
+        Speed: 0.00m/s
+    </div>
+
+    <canvas id="canvas1"></canvas>
+
+    <script src="lib.js"></script>
+    <script>
+        // Enhanced physics constants with realistic values for QWOP-style control
+        const PHYSICS = {
+            GRAVITY: 9.81,          // Real-world gravity (adjusted for 60 FPS)
+            GROUND_FRICTION: 0.98,       // Ground friction coefficient
+            AIR_RESISTANCE: 0.995,       // Air resistance factor
+            MAX_JOINT_ANGLE: Math.PI / 3,// Maximum angle for leg joints
+            MIN_JOINT_ANGLE: -Math.PI / 3,// Minimum angle for leg joints
+            JOINT_SPEED: 0.05,          // Speed of joint rotation
+            LEG_SEGMENT_LENGTH: 0.4,    // Length of each leg segment
+            GROUND_THRESHOLD: 0.01,     // Minimum distance from ground
+            BALANCE_RECOVERY: 0.2      // Rate of balance recovery
+        };
+
+        // Leg joint configuration
+        const legJoints = {
+            frontLeft: {
+                upper: { angle: 0, targetAngle: 0 },
+                lower: { angle: 0, targetAngle: 0 }
+            },
+            frontRight: {
+                upper: { angle: 0, targetAngle: 0 },
+                lower: { angle: 0, targetAngle: 0 }
+            },
+            backLeft: {
+                upper: { angle: 0, targetAngle: 0 },
+                lower: { angle: 0, targetAngle: 0 }
+            },
+            backRight: {
+                upper: { angle: 0, targetAngle: 0 },
+                lower: { angle: 0, targetAngle: 0 }
+            }
+        };
+
+        // Chair state management
+        let chairState = {
+            position: [0, 1, 0],        // Start slightly above ground
+            rotation: [0, 0, 0],
+            velocity: [0, 0, 0],
+            angularVel: [0, 0, 0],
+            balance: 50,               // Balance percentage (0-100)
+            grounded: false,            // Track ground contact
+            legLength: 1,
+            legs: {
+                frontLeft: { isActive: false },
+                frontRight: { isActive: false },
+                backLeft: { isActive: false },
+                backRight: { isActive: false }
+            }
+        };
+
+        // Keyboard state
+        let keys = {
+            q: false,  // Front Left Leg
+            w: false,  // Front Right Leg
+            o: false,  // Back Left Leg
+            p: false,  // Back Right Leg
+            r: false   // Reset
+        };
+
+        // Keyboard event handlers with improved response
+        document.addEventListener('keydown', e => {
+            if (e.key.toLowerCase() in keys) {
+                keys[e.key.toLowerCase()] = true;
+                if (e.key.toLowerCase() === 'r') {
+                    resetChair();
+                } else {
+                    let legName = {
+                        q: 'frontLeft',
+                        w: 'frontRight',
+                        o: 'backLeft',
+                        p: 'backRight'
+                    }[e.key.toLowerCase()];
+                    chairState.legs[legName].isActive = true;
+                }
+            }
+        });
+
+        document.addEventListener('keyup', e => {
+            if (e.key.toLowerCase() in keys) {
+                keys[e.key.toLowerCase()] = false;
+                let legName = {
+                    q: 'frontLeft',
+                    w: 'frontRight',
+                    o: 'backLeft',
+                    p: 'backRight'
+                }[e.key.toLowerCase()];
+                if (legName) {
+                    chairState.legs[legName].isActive = false;
+                }
+            }
+        });
+
+        // Reset chair to starting position
+        function resetChair() {
+            chairState.position = [0, 1, 0];
+            chairState.rotation = [0, 0, 0];
+            chairState.velocity = [0, 0, 0];
+            chairState.angularVel = [0, 0, 0];
+            chairState.balance = 100;
+            Object.values(legJoints).forEach(leg => {
+                leg.upper.angle = 0;
+                leg.upper.targetAngle = 0;
+                leg.lower.angle = 0;
+                leg.lower.targetAngle = 0;
+            });
+        }
+
+        // Update leg controls based on keyboard input
+        function updateLegControls() {
+            const jointSpeed = parseFloat(jointSpeedSlider.value) * 0.01;
+
+            Object.entries(chairState.legs).forEach(([legName, leg]) => {
+                const keyName = {
+                    frontLeft: 'q',
+                    frontRight: 'w',
+                    backLeft: 'o',
+                    backRight: 'p'
+                }[legName];
+
+                if (keys[keyName]) {
+                    legJoints[legName].upper.targetAngle += jointSpeed;
+                    legJoints[legName].lower.targetAngle -= jointSpeed;
+                } else {
+                    legJoints[legName].upper.targetAngle *= 0.95;
+                    legJoints[legName].lower.targetAngle *= 0.95;
+                }
+
+                // Clamp angles to valid ranges
+                legJoints[legName].upper.targetAngle = Math.max(
+                    PHYSICS.MIN_JOINT_ANGLE,
+                    Math.min(PHYSICS.MAX_JOINT_ANGLE, legJoints[legName].upper.targetAngle)
+                );
+                legJoints[legName].lower.targetAngle = Math.max(
+                    PHYSICS.MIN_JOINT_ANGLE,
+                    Math.min(PHYSICS.MAX_JOINT_ANGLE, legJoints[legName].lower.targetAngle)
+                );
+
+                // Smooth angle transitions
+                legJoints[legName].upper.angle += (
+                    legJoints[legName].upper.targetAngle - legJoints[legName].upper.angle
+                ) * 0.1;
+                legJoints[legName].lower.angle += (
+                    legJoints[legName].lower.targetAngle - legJoints[legName].lower.angle
+                ) * 0.1;
+            });
+        }
+
+        // Calculate foot positions based on joint angles
+        function calculateFootPosition(basePos, upperAngle, lowerAngle) {
+            // First joint position
+            const jointPos = [
+                basePos[0] + Math.sin(upperAngle) * PHYSICS.LEG_SEGMENT_LENGTH,
+                basePos[1] - Math.cos(upperAngle) * PHYSICS.LEG_SEGMENT_LENGTH,
+                basePos[2]
+            ];
+
+            // Final foot position
+            const footPos = [
+                jointPos[0] + Math.sin(lowerAngle) * PHYSICS.LEG_SEGMENT_LENGTH,
+                jointPos[1] - Math.cos(lowerAngle) * PHYSICS.LEG_SEGMENT_LENGTH,
+                jointPos[2]
+            ];
+
+            return { jointPos, footPos };
+        }
+
+        // Check ground collisions and apply forces
+        function checkGroundCollision() {
+            chairState.grounded = false;
+            let lowestPoint = Infinity;
+
+            // Check each leg for ground contact
+            Object.entries(chairState.legs).forEach(([legName, leg]) => {
+                const basePos = [
+                    chairState.position[0] + (legName.includes('front') ? 0.5 : -0.5),
+                    chairState.position[1],
+                    chairState.position[2] + (legName.includes('Left') ? 0.5 : -0.5)
+                ];
+
+                const { footPos } = calculateFootPosition(
+                    basePos,
+                    legJoints[legName].upper.angle,
+                    legJoints[legName].lower.angle
+                );
+
+                lowestPoint = Math.min(lowestPoint, footPos[1]);
+
+                if (footPos[1] <= PHYSICS.GROUND_THRESHOLD) {
+                    chairState.grounded = true;
+                    // Apply ground reaction force
+                    chairState.velocity[1] += 0.1;
+                    // Apply friction
+                    chairState.velocity[0] *= PHYSICS.GROUND_FRICTION;
+                    chairState.velocity[2] *= PHYSICS.GROUND_FRICTION;
+                }
+            });
+
+            // Prevent sinking
+            if (lowestPoint < PHYSICS.GROUND_THRESHOLD) {
+                chairState.position[1] += PHYSICS.GROUND_THRESHOLD - lowestPoint;
+            }
+        }
+
+        // Update physics simulation
+        function updatePhysics(deltaTime) {
+            updateLegControls();
+
+            // Apply gravity
+            chairState.velocity[1] -= PHYSICS.GRAVITY * deltaTime;
+
+            // Apply air resistance
+            for (let i = 0; i < 3; i++) {
+                chairState.velocity[i] *= PHYSICS.AIR_RESISTANCE;
+                chairState.angularVel[i] *= PHYSICS.AIR_RESISTANCE;
+            }
+
+            // Update position and rotation
+            for (let i = 0; i < 3; i++) {
+                chairState.position[i] += chairState.velocity[i] * deltaTime;
+                chairState.rotation[i] += chairState.angularVel[i] * deltaTime;
+            }
+
+            // Check ground collisions
+            checkGroundCollision();
+
+            // Update balance based on rotation
+            const tiltAngle = Math.sqrt(
+                chairState.rotation[0] * chairState.rotation[0] +
+                chairState.rotation[2] * chairState.rotation[2]
+            );
+
+            if (tiltAngle > Math.PI / 4) {
+                chairState.balance = Math.max(0, chairState.balance - 1);
+            } else if (chairState.grounded) {
+                chairState.balance = Math.min(100, chairState.balance + PHYSICS.BALANCE_RECOVERY);
+            }
+
+            // Update status display
+            const statusPanel = document.getElementById('statusPanel');
+            statusPanel.innerHTML = `
+                Balance: ${Math.round(chairState.balance)}%<br>
+                Height: ${chairState.position[1].toFixed(2)}m<br>
+                Speed: ${Math.sqrt(
+                chairState.velocity[0] * chairState.velocity[0] +
+                chairState.velocity[2] * chairState.velocity[2]
+            ).toFixed(2)}m/s
+            `;
+        }
+
+        // Canvas setup and initialization
+        function resizeCanvas() {
+            const canvas = document.getElementById('canvas1');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Initialize WebGL and tracking
+        trackMouse(canvas1);
+        startGL(canvas1);
+
+        // Pre-build geometric objects
+        let myCube = Cube();
+        let myCylinder = Cylinder(20);
+        let mySphere = Sphere(20);
+
+        // Define material with improved shading
+        // Define material with improved shading and physics-based response
+        addMaterial(1, `
+            // Calculate basic diffuse lighting
+            vec3 lightDir = normalize(vec3(0.577, 0.577, 0.577));
+            float diffuse = max(0.0, dot(normalize(vNor), lightDir));
+            
+            // Add ambient light to prevent completely dark areas
+            float ambient = 0.2;
+            
+            // Calculate specular highlight
+            vec3 viewDir = normalize(-vPos);
+            vec3 reflectDir = reflect(-lightDir, normalize(vNor));
+            float specular = pow(max(0.0, dot(viewDir, reflectDir)), 32.0);
+            
+            // Combine lighting components
+            color = mix(
+                uColor * (ambient + diffuse) + vec3(0.5) * specular,
+                vec3(0.5),
+                min(0.95, 0.007 * dot(vTpos, vTpos))
+            );
+        `);
+
+        // Animation loop with improved physics and rendering
+        let previousTime = Date.now() / 1000;
+
+        function drawFrame() {
+            requestAnimationFrame(drawFrame);
+
+            // Calculate delta time for physics
+            let currentTime = Date.now() / 1000;
+            let deltaTime = currentTime - previousTime;
+            previousTime = currentTime;
+
+            // Get current parameter values from UI
+            let seatWidth = seatWidthSlider.value / 100 * 0.8 + 0.2;
+            chairState.legLength = legLengthSlider.value / 100 * 0.8 + 0.4;
+
+            // Get chair color from color picker
+            let color = chairColorPicker.value;
+            let colorRGB = [
+                parseInt(color.substr(1, 2), 16) / 255,
+                parseInt(color.substr(3, 2), 16) / 255,
+                parseInt(color.substr(5, 2), 16) / 255
+            ];
+
+            // Update physics simulation
+            updatePhysics(deltaTime);
+
+            // Camera setup with improved positioning
+            VM.identity()
+                .perspective(2)
+                .move(0, -1, -6)
+                .scale(1, canvas1.width / canvas1.height, 1);
+
+            // Handle camera rotation based on mouse/touch input
+            if (!isPhone()) {
+                VM.turnX(canvas1.ry / 30).turnY(canvas1.rx / 30);
+            }
+
+            // Draw complete scene
+            drawScene(() => {
+                // Draw floor grid with improved visual feedback
+                M.S().scale(0.75, 1, 0.75);
+
+                // Main floor panel
+                M.S()
+                    .scale(2, 0.001, 2)
+                    .draw(myCube, [0.3, 0.3, 0.3])
+                    .R();
+
+                // Grid lines
+                for (let i = -2; i <= 2; i++) {
+                    M.S()
+                        .move(i, 0.001, 0)
+                        .scale(0.01, 0.001, 2)
+                        .draw(myCube, [0.4, 0.4, 0.4])
+                        .R();
+                    M.S()
+                        .move(0, 0.001, i)
+                        .scale(2, 0.001, 0.01)
+                        .draw(myCube, [0.4, 0.4, 0.4])
+                        .R();
+                }
+                M.R();
+
+                // Draw chair with physics-based positioning
+                M.S()
+                    .move(...chairState.position)
+                    .turnX(chairState.rotation[0])
+                    .turnY(chairState.rotation[1])
+                    .turnZ(chairState.rotation[2]);
+
+                // Draw seat cushion
+                M.S()
+                    .move(0, chairState.legLength, 0)
+                    .scale(seatWidth, 0.1, seatWidth)
+                    .draw(myCube, colorRGB)
+                    .R();
+
+                // Draw backrest
+                M.S()
+                    .move(-seatWidth + 0.1, chairState.legLength + 0.4, 0)
+                    .scale(0.1, 0.5, seatWidth)
+                    .draw(myCube, colorRGB)
+                    .R();
+
+                // Draw legs with joint-based animation
+                Object.entries(chairState.legs).forEach(([legName, leg]) => {
+                    // Calculate leg base position
+                    let basePos = [
+                        (legName.includes('front') ? seatWidth * 0.8 : -seatWidth * 0.8),
+                        chairState.legLength / 2,
+                        (legName.includes('Left') ? seatWidth * 0.8 : -seatWidth * 0.8)
+                    ];
+
+                    // Get joint angles for this leg
+                    let upperAngle = legJoints[legName].upper.angle;
+                    let lowerAngle = legJoints[legName].lower.angle;
+
+                    // Calculate joint and foot positions
+                    let { jointPos, footPos } = calculateFootPosition(basePos, upperAngle, lowerAngle);
+
+                    // Draw upper leg segment
+                    M.S()
+                        .move(basePos)
+                        .aim(subtract(jointPos, basePos))
+                        .scale(0.05, 0.05, distance(basePos, jointPos))
+                        .draw(myCylinder, colorRGB)
+                        .R();
+
+                    // Draw lower leg segment
+                    M.S()
+                        .move(jointPos)
+                        .aim(subtract(footPos, jointPos))
+                        .scale(0.05, 0.05, distance(jointPos, footPos))
+                        .draw(myCylinder, colorRGB)
+                        .R();
+
+                    // Draw joint spheres for visual feedback
+                    M.S()
+                        .move(...jointPos)
+                        .scale(0.06, 0.06, 0.06)
+                        .draw(mySphere, [0.8, 0.2, 0.2])
+                        .R();
+
+                    // Draw foot contact point
+                    M.S()
+                        .move(...footPos)
+                        .scale(0.06, 0.06, 0.06)
+                        .draw(mySphere, chairState.grounded ? [0.2, 0.8, 0.2] : [0.8, 0.8, 0.2])
+                        .R();
+                });
+                M.R();
+
+                // Draw balance indicator
+                if (chairState.balance < 50) {
+                    M.S()
+                        .move(0, chairState.legLength + 1, 0)
+                        .scale(0.2, 0.2, 0.2)
+                        .draw(mySphere, [1, 0.2, 0.2, 0.5])
+                        .R();
+                }
+            });
+        }
+
+        // Start the animation loop
+        requestAnimationFrame(drawFrame);
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Chair Physics Simulation with Independent Leg Control</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #808080;
+            font-family: Arial, sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .controls {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            z-index: 1;
+        }
+
+        .slider-container {
+            margin: 10px 0;
+        }
+
+        input[type="range"] {
+            width: 200px;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        input[type="color"] {
+            vertical-align: middle;
+        }
+
+        .instructions {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+        }
+
+        .debug-info {
+            position: absolute;
+            left: 10px;
+            bottom: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="controls">
+        <h3>Chair Controls</h3>
+        <div class="slider-container">
+            <label for="seatWidthSlider">Seat Width:</label>
+            <input type="range" id="seatWidthSlider" value="20" max="50" min="10">
+            <span id="seatWidthValue">20</span>
+        </div>
+        <div class="slider-container">
+            <label for="legLengthSlider">Leg Length:</label>
+            <input type="range" id="legLengthSlider" value="100" max="200" min="10">
+            <span id="legLengthValue">100</span>
+        </div>
+        <div class="slider-container">
+            <label for="legSpeedSlider">Leg Speed:</label>
+            <input type="range" id="legSpeedSlider" value="5" max="10" min="1">
+            <span id="legSpeedValue">5</span>
+        </div>
+        <div class="slider-container">
+            <label for="chairColorPicker">Chair Color:</label>
+            <input type="color" id="chairColorPicker" value="#ffffff">
+        </div>
+    </div>
+
+    <div class="instructions">
+        <h3>Controls:</h3>
+        <p>Q: Lift Front Left Leg</p>
+        <p>W: Lift Front Right Leg</p>
+        <p>O: Lift Back Left Leg</p>
+        <p>P: Lift Back Right Leg</p>
+        <p>Mouse: Rotate View</p>
+        <p>D: Toggle Debug View</p>
+    </div>
+
+    <div id="debugPanel" class="debug-info">
+        <h3>Debug Information</h3>
+        <div id="debugInfo"></div>
+    </div>
+
+    <canvas id="canvas1"></canvas>
+
+    <script src="lib.js"></script>
+    <script>
+        const PHYSICS = {
+            GRAVITY: 9.81,
+            GROUND_FRICTION: 0.98,
+            AIR_RESISTANCE: 0.995,
+            MAX_TILT: Math.PI / 3,
+            STABILITY_THRESHOLD: 0.15,
+            RESTITUTION: 0.3,
+            MASS: 10,
+            COLLAPSE_SPEED: 0.05,
+            LEG_SPRING_CONSTANT: 100,
+            LEG_DAMPING: 0.3
+        };
+
+        const LEG_PHYSICS = {
+            MAX_EXTENSION: 1.2,
+            MIN_EXTENSION: 0.7,
+            MOVEMENT_SPEED: 0.05,
+            RETURN_SPEED: 0.03,
+            SPRING_STRENGTH: 0.8,
+            NATURAL_LENGTH: 1.0
+        };
+
+        const CHAIR_STRUCTURE = {
+            SEAT_HEIGHT: 0.1,
+            SEAT_BACK_HEIGHT: 0.5,
+            SEAT_BACK_THICKNESS: 0.1,
+            LEG_WIDTH: 0.04,
+            LEG_DEPTH: 0.04
+        };
+
+        class EnhancedSpring {
+            constructor(mass = 1) {
+                this.position = LEG_PHYSICS.NATURAL_LENGTH;
+                this.targetPosition = LEG_PHYSICS.NATURAL_LENGTH;
+                this.velocity = 0;
+                this.force = 0;
+                this.mass = mass;
+                this.k = PHYSICS.LEG_SPRING_CONSTANT;
+                this.damping = PHYSICS.LEG_DAMPING;
+            }
+
+            update(deltaTime) {
+                const positionDiff = this.targetPosition - this.position;
+                const springForce = positionDiff * this.k * LEG_PHYSICS.SPRING_STRENGTH;
+                const dampingForce = -this.velocity * this.damping;
+                const totalForce = springForce + dampingForce + this.force;
+                const acceleration = totalForce / this.mass;
+                this.velocity += acceleration * deltaTime;
+                this.position += this.velocity * deltaTime;
+                this.position = Math.max(
+                    LEG_PHYSICS.MIN_EXTENSION,
+                    Math.min(LEG_PHYSICS.MAX_EXTENSION, this.position)
+                );
+            }
+
+            setTargetPosition(target) {
+                this.targetPosition = Math.max(
+                    LEG_PHYSICS.MIN_EXTENSION,
+                    Math.min(LEG_PHYSICS.MAX_EXTENSION, target)
+                );
+            }
+
+            getPosition() {
+                return this.position;
+            }
+        }
+
+        function initializeCanvas() {
+            const canvas = document.getElementById('canvas1');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            return canvas;
+        }
+
+        window.addEventListener('resize', () => {
+            initializeCanvas();
+        });
+        const canvas = initializeCanvas();
+
+        trackMouse(canvas);
+        startGL(canvas);
+        const myCube = Cube();
+        const myCylinder = Cylinder(20);
+        const mySphere = Sphere(20);
+
+        addMaterial(1, `
+            color = mix(uColor, vec3(.5), min(.95,.007 * dot(vTpos, vTpos)));
+        `);
+
+        const springs = {
+            frontLeft: new EnhancedSpring(1),
+            frontRight: new EnhancedSpring(1),
+            backLeft: new EnhancedSpring(1),
+            backRight: new EnhancedSpring(1)
+        };
+
+        let chairState = {
+            centerOfMass: [0, 0, 0],
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            velocity: [0, 0, 0],
+            angularVel: [0, 0, 0],
+            legLength: 1,
+            legs: {
+                frontLeft: { spring: springs.frontLeft, isActive: false },
+                frontRight: { spring: springs.frontRight, isActive: false },
+                backLeft: { spring: springs.backLeft, isActive: false },
+                backRight: { spring: springs.backRight, isActive: false }
+            }
+        };
+
+        let keys = {
+            q: false,
+            w: false,
+            o: false,
+            p: false
+        };
+
+        function updateLegMovement(leg, isKeyPressed) {
+            if (isKeyPressed) {
+                leg.spring.setTargetPosition(LEG_PHYSICS.MIN_EXTENSION);
+            } else {
+                leg.spring.setTargetPosition(LEG_PHYSICS.NATURAL_LENGTH);
+            }
+        }
+
+        function calculateCenterOfMass() {
+            const components = [
+                { position: chairState.position, mass: PHYSICS.MASS },
+                ...Object.entries(chairState.legs).map(([legName, leg]) => ({
+                    position: calculateLegContacts(chairState, 0)[legName],
+                    mass: PHYSICS.MASS * 0.2
+                }))
+            ];
+
+            let totalMass = 0;
+            let com = [0, 0, 0];
+            components.forEach(component => {
+                totalMass += component.mass;
+                com[0] += component.position.x * component.mass;
+                com[1] += component.position.y * component.mass;
+                com[2] += component.position.z * component.mass;
+            });
+            chairState.centerOfMass = com.map(coord => coord / totalMass);
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key.toLowerCase() in keys) {
+                keys[e.key.toLowerCase()] = true;
+                const legName = {
+                    q: 'frontLeft',
+                    w: 'frontRight',
+                    o: 'backLeft',
+                    p: 'backRight'
+                }[e.key.toLowerCase()];
+                updateLegMovement(chairState.legs[legName], true);
+            } else if (e.key.toLowerCase() === 'd') {
+                debug = !debug;
+                document.getElementById('debugPanel').style.display =
+                    debug ? 'block' : 'none';
+            }
+        });
+
+        document.addEventListener('keyup', e => {
+            if (e.key.toLowerCase() in keys) {
+                keys[e.key.toLowerCase()] = false;
+                const legName = {
+                    q: 'frontLeft',
+                    w: 'frontRight',
+                    o: 'backLeft',
+                    p: 'backRight'
+                }[e.key.toLowerCase()];
+                updateLegMovement(chairState.legs[legName], false);
+            }
+        });
+
+        let debug = false;
+
+        function rotatePoint(x, y, z, rotX, rotY, rotZ) {
+            let point = { x, y, z };
+            const cosY = Math.cos(rotY);
+            const sinY = Math.sin(rotY);
+            const tempX = point.x * cosY - point.z * sinY;
+            point.z = point.x * sinY + point.z * cosY;
+            point.x = tempX;
+            const cosX = Math.cos(rotX);
+            const sinX = Math.sin(rotX);
+            const tempY = point.y * cosX - point.z * sinX;
+            point.z = point.y * sinX + point.z * cosX;
+            point.y = tempY;
+            const cosZ = Math.cos(rotZ);
+            const sinZ = Math.sin(rotZ);
+            const finalX = point.x * cosZ - point.y * sinZ;
+            const finalY = point.x * sinZ + point.y * cosZ;
+            point.x = finalX;
+            point.y = finalY;
+
+            return point;
+        }
+
+        function calculateLegContacts(chairState, seatWidth) {
+            const contacts = {};
+            const legOffset = seatWidth * 0.9;
+
+            Object.entries(chairState.legs).forEach(([legName, leg]) => {
+                const baseOffset = {
+                    x: (legName.includes('front') ? legOffset : -legOffset),
+                    z: (legName.includes('Left') ? legOffset : -legOffset)
+                };
+                const rotatedOffset = rotatePoint(
+                    baseOffset.x,
+                    0,
+                    baseOffset.z,
+                    chairState.rotation[0],
+                    chairState.rotation[1],
+                    chairState.rotation[2]
+                );
+
+                contacts[legName] = {
+                    x: chairState.position[0] + rotatedOffset.x,
+                    y: Math.max(0, chairState.position[1] + rotatedOffset.y),
+                    z: chairState.position[2] + rotatedOffset.z,
+                    isGrounded: rotatedOffset.y <= 0.01
+                };
+            });
+            return contacts;
+        }
+
+        function calculateStability(contacts) {
+            let groundedLegs = 0;
+            let stabilityScore = 0;
+
+            Object.values(contacts).forEach(contact => {
+                if (contact.isGrounded) {
+                    groundedLegs++;
+                    stabilityScore += 0.25;
+                }
+            });
+            if (groundedLegs >= 3) {
+                const groundedPoints = Object.values(contacts)
+                    .filter(contact => contact.isGrounded)
+                    .map(contact => ({ x: contact.x, z: contact.z }));
+                const area = calculatePolygonArea(groundedPoints);
+                stabilityScore *= Math.min(1, area / 0.5);
+            }
+
+            return { score: stabilityScore, groundedLegs };
+        }
+
+        function calculatePolygonArea(points) {
+            let area = 0;
+            for (let i = 0; i < points.length; i++) {
+                const j = (i + 1) % points.length;
+                area += points[i].x * points[j].z;
+                area -= points[j].x * points[i].z;
+            }
+            return Math.abs(area) / 2;
+        }
+
+        function calculateCollapseDirection(contacts) {
+            let direction = { pitch: 0, roll: 0 };
+            let groundedCount = {
+                front: 0,
+                back: 0,
+                left: 0,
+                right: 0
+            };
+            Object.entries(contacts).forEach(([legName, contact]) => {
+                if (contact.isGrounded) {
+                    if (legName.includes('front')) groundedCount.front++;
+                    if (legName.includes('back')) groundedCount.back++;
+                    if (legName.includes('Left')) groundedCount.left++;
+                    if (legName.includes('Right')) groundedCount.right++;
+                }
+            });
+            direction.pitch = (groundedCount.front - groundedCount.back) * 0.1;
+            direction.roll = (groundedCount.right - groundedCount.left) * 0.1;
+
+            return direction;
+        }
+
+        function updatePhysics(deltaTime, chairState, seatWidth) {
+            const contacts = calculateLegContacts(chairState, seatWidth);
+            const stability = calculateStability(contacts);
+            chairState.velocity[1] -= PHYSICS.GRAVITY * deltaTime;
+
+            if (stability.score < PHYSICS.STABILITY_THRESHOLD) {
+                const collapseDirection = calculateCollapseDirection(contacts);
+                chairState.angularVel[0] += collapseDirection.pitch * PHYSICS.COLLAPSE_SPEED;
+                chairState.angularVel[2] += collapseDirection.roll * PHYSICS.COLLAPSE_SPEED;
+            }
+
+            for (let i = 0; i < 3; i++) {
+                chairState.position[i] += chairState.velocity[i] * deltaTime;
+                chairState.rotation[i] += chairState.angularVel[i] * deltaTime;
+                chairState.velocity[i] *= PHYSICS.AIR_RESISTANCE;
+                chairState.angularVel[i] *= PHYSICS.AIR_RESISTANCE;
+            }
+
+            if (chairState.position[1] < 0) {
+                chairState.position[1] = 0;
+                chairState.velocity[1] = Math.max(0, -chairState.velocity[1] * PHYSICS.RESTITUTION);
+                chairState.velocity[0] *= PHYSICS.GROUND_FRICTION;
+                chairState.velocity[2] *= PHYSICS.GROUND_FRICTION;
+            }
+
+            // Apply forces from leg collisions
+            Object.entries(chairState.legs).forEach(([legName, leg]) => {
+                const contact = contacts[legName];
+                if (contact.isGrounded) {
+                    const impactForce = -chairState.velocity[1] * PHYSICS.MASS * 0.5; // Adjust force calculation
+                    const legOffset = [contact.x - chairState.centerOfMass[0], contact.y - chairState.centerOfMass[1], contact.z - chairState.centerOfMass[2]];
+
+                    // Apply impact force to linear velocity
+                    chairState.velocity[1] += impactForce / PHYSICS.MASS * deltaTime;
+
+                    // Calculate and apply torque from impact force (simplified)
+                    const torque = cross(legOffset, [0, impactForce, 0]);
+                    chairState.angularVel[0] += torque[0] * 0.01 * deltaTime; // Adjust torque factor
+                    chairState.angularVel[2] += torque[2] * 0.01 * deltaTime;
+                }
+            });
+
+            return { contacts, stability };
+        }
+
+        function updateDebugInfo(contacts, stability) {
+            if (!debug) return;
+            const debugInfo = document.getElementById('debugInfo');
+            debugInfo.innerHTML = ``
+        }
+        let previousTime = Date.now() / 1000;
+
+        function drawFrame() {
+            requestAnimationFrame(drawFrame);
+            const currentTime = Date.now() / 1000;
+            const deltaTime = currentTime - previousTime;
+            previousTime = currentTime;
+            const seatWidth = seatWidthSlider.value / 100 * 0.8 + 0.2;
+            chairState.legLength = legLengthSlider.value / 100 * 0.8 + 0.4;
+            const legSpeed = legSpeedSlider.value / 10;
+            LEG_PHYSICS.MOVEMENT_SPEED = legSpeed * 0.05;
+            LEG_PHYSICS.RETURN_SPEED = legSpeed * 0.03;
+
+            const color = chairColorPicker.value;
+            const colorRGB = [
+                parseInt(color.substr(1, 2), 16) / 255,
+                parseInt(color.substr(3, 2), 16) / 255,
+                parseInt(color.substr(5, 2), 16) / 255
+            ];
+            Object.values(chairState.legs).forEach(leg => {
+                leg.spring.update(deltaTime);
+            });
+            const { contacts, stability } = updatePhysics(deltaTime, chairState, seatWidth);
+            updateDebugInfo(contacts, stability);
+            VM.identity()
+                .perspective(2)
+                .move(0, -1, -6)
+                .scale(1, canvas.width / canvas.height, 1);
+            if (!isPhone()) {
+                VM.turnX(canvas.ry / 30).turnY(canvas.rx / 30);
+            }
+
+            calculateCenterOfMass()
+
+            drawScene(() => {
+                M.S().scale(0.75, 1, 0.75);
+                M.S().scale(1, 0.001, 1).draw(myCube, [0.5, 0.2, 0.1]).R();
+                for (let i = -2; i <= 2; i++) {
+                    M.S().move(i, 0, 0).scale(0.01, 0.002, 2).draw(myCube, [0.2, 0.2, 0.2]).R();
+                    M.S().move(0, 0, i).scale(2, 0.002, 0.01).draw(myCube, [0.2, 0.2, 0.2]).R();
+                }
+                M.R();
+
+                M.S()
+                    .move(...chairState.position)
+                    .turnX(chairState.rotation[0])
+                    .turnY(chairState.rotation[1])
+                    .turnZ(chairState.rotation[2]);
+
+                M.S()
+                    .move(0, chairState.legLength, 0)
+                    .scale(seatWidth, CHAIR_STRUCTURE.SEAT_HEIGHT, seatWidth)
+                    .draw(myCube, colorRGB)
+                    .R();
+
+                M.S()
+                    .move(
+                        -seatWidth + CHAIR_STRUCTURE.SEAT_BACK_THICKNESS / 2,
+                        chairState.legLength + CHAIR_STRUCTURE.SEAT_HEIGHT + CHAIR_STRUCTURE.SEAT_BACK_HEIGHT / 1.5,
+                        0
+                    )
+                    .scale(
+                        CHAIR_STRUCTURE.SEAT_BACK_THICKNESS,
+                        CHAIR_STRUCTURE.SEAT_BACK_HEIGHT,
+                        seatWidth
+                    )
+                    .draw(myCube, colorRGB)
+                    .R();
+                Object.entries(chairState.legs).forEach(([legName, leg]) => {
+                    const cornerOffset = seatWidth * 0.9;
+                    const basePos = [
+                        (legName.includes('front') ? cornerOffset : -cornerOffset),
+                        chairState.legLength,
+                        (legName.includes('Left') ? cornerOffset : -cornerOffset)
+                    ];
+                    const springPos = leg.spring.getPosition();
+                    const segmentLength = chairState.legLength / 2;
+                    const compression = 1 - (LEG_PHYSICS.NATURAL_LENGTH - springPos);
+
+                    const middlePos = [
+                        basePos[0],
+                        basePos[1] - segmentLength * compression,
+                        basePos[2]
+                    ];
+                    const footPos = [
+                        middlePos[0],
+                        middlePos[1] - segmentLength * compression,
+                        middlePos[2]
+                    ];
+
+                    M.S()
+                        .move(mix(basePos, middlePos, 0.5))
+                        .aim(subtract(middlePos, basePos))
+                        .scale(
+                            CHAIR_STRUCTURE.LEG_WIDTH,
+                            CHAIR_STRUCTURE.LEG_WIDTH,
+                            distance(basePos, middlePos) / 2
+                        )
+                        .draw(myCube, colorRGB)
+                        .R();
+
+                    M.S()
+                        .move(mix(middlePos, footPos, 0.5))
+                        .aim(subtract(footPos, middlePos))
+                        .scale(
+                            CHAIR_STRUCTURE.LEG_WIDTH,
+                            CHAIR_STRUCTURE.LEG_WIDTH,
+                            distance(middlePos, footPos) / 2
+                        )
+                        .draw(myCube, colorRGB)
+                        .R();
+                    if (debug) {
+                        const contact = contacts[legName];
+                        M.S()
+                            .move(footPos[0], footPos[1], footPos[2])
+                            .scale(0.05, 0.05, 0.05)
+                            .draw(mySphere, contact.isGrounded ? [0, 1, 0] : [1, 0, 0])
+                            .R();
+                    }
+                });
+                M.R();
+            });
+        }
+
+        function updateSliderDisplays() {
+            document.getElementById('seatWidthValue').textContent = seatWidthSlider.value;
+            document.getElementById('legLengthValue').textContent = legLengthSlider.value;
+            document.getElementById('legSpeedValue').textContent = legSpeedSlider.value;
+        }
+
+        seatWidthSlider.oninput = updateSliderDisplays;
+        legLengthSlider.oninput = updateSliderDisplays;
+        legSpeedSlider.oninput = updateSliderDisplays;
+        updateSliderDisplays();
+        requestAnimationFrame(drawFrame);
+    </script>
+</body>
+
+</html>

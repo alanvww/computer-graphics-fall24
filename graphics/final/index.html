@@ -585,24 +585,49 @@
                     .draw(myCube, colorRGB)
                     .R();
 
-                // Draw legs with physics
                 Object.entries(chairState.legs).forEach(([legName, leg]) => {
                     const cornerOffset = seatWidth * 0.9;
                     const basePos = [
                         (legName.includes('front') ? cornerOffset : -cornerOffset),
-                        chairState.legLength,
+                        0, // Start from the seat bottom
                         (legName.includes('Left') ? cornerOffset : -cornerOffset)
                     ];
 
                     const springPos = leg.spring.getPosition();
                     const legHeight = chairState.legLength * springPos;
 
+                    // Calculate leg attachment point at the seat
+                    const attachmentPoint = [
+                        basePos[0],
+                        chairState.legLength,
+                        basePos[2]
+                    ];
+
+                    // Calculate leg endpoint (floor contact point)
+                    const endPoint = [
+                        basePos[0],
+                        Math.max(0, chairState.legLength - legHeight), // Prevent going below floor
+                        basePos[2]
+                    ];
+
+                    // Draw leg as a cylinder
                     M.S()
-                        .move(basePos[0], basePos[1] - legHeight / 2, basePos[2])
+                        .move(basePos[0],
+                            (attachmentPoint[1] + endPoint[1]) / 2, // Center point of the leg
+                            basePos[2])
                         .scale(CHAIR_STRUCTURE.LEG_WIDTH,
-                            legHeight,
+                            Math.abs(attachmentPoint[1] - endPoint[1]) / 2, // Half height because scale is from center
                             CHAIR_STRUCTURE.LEG_WIDTH)
-                        .draw(myCube, colorRGB)
+                        .draw(myCylinder, colorRGB)
+                        .R();
+
+                    // Add foot pad at the bottom
+                    M.S()
+                        .move(endPoint[0], endPoint[1], endPoint[2])
+                        .scale(CHAIR_STRUCTURE.LEG_WIDTH * 1.5,
+                            CHAIR_STRUCTURE.LEG_WIDTH * 0.5,
+                            CHAIR_STRUCTURE.LEG_WIDTH * 1.5)
+                        .draw(myCylinder, colorRGB)
                         .R();
                 });
 
